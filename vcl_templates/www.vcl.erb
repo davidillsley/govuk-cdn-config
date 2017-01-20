@@ -192,6 +192,10 @@ sub vcl_recv {
   # Unspoofable original client address.
   set req.http.True-Client-IP = req.http.Fastly-Client-IP;
 
+  if (req.url ~ "^/_gds/temporary/tls/") {
+    error 802 "TLS Check";
+  }
+
 #FASTLY recv
 
   if (req.request != "HEAD" && req.request != "GET" && req.request != "FASTLYPURGE") {
@@ -291,6 +295,22 @@ sub vcl_error {
     set obj.http.Fastly-Backend-Name = "force_ssl";
     synthetic {""};
     return (deliver);
+  }
+
+  if (obj.status == 802) {
+    set resp.status = 200;
+    set resp.response = "OK";
+    set obj.http.Content-Type = "application/json";
+    if (tls.client.protocol == "TLSv1.2") {
+      synthetic {"{ "tls":"TLSv1.2" }"};
+    } else if (tls.client.protocol == "TLSv1.1") {
+      synthetic {"{ "tls":"TLSv1.1" }"};
+    } else if (tls.client.protocol == "TLSv1") {
+      synthetic {"{ "tls":"TLSv1.0" }"};
+    } else {
+      synthetic {"{ "tls":"unknown" }"};
+    }
+    return(deliver);
   }
 
   # Assume we've hit vcl_error() because the backend is unavailable
